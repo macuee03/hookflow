@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. Tabel Endpoint (Server tujuan yang didaftarkan oleh developer)
+model Endpoint {
+  id          String            @id @default(uuid())
+  name        String            // Contoh: "Server Toko Online", "Slack Notifikasi"
+  url         String            // Contoh: "https://webhook.site/abc-123"
+  secretKey   String            // Kunci rahasia untuk tanda tangan HMAC (format: whsec_...)
+  events      String            // Daftar event yang disubscribe (contoh: "order.paid,user.signup")
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  deliveries  DeliveryAttempt[]
+}
+
+// 2. Tabel WebhookEvent (Pesan atau data yang dipicu sistem)
+model WebhookEvent {
+  id          String            @id @default(uuid())
+  eventType   String            // Contoh: "order.paid", "invoice.created"
+  payload     String            @db.Text // Data JSON payload yang dikirim
+  createdAt   DateTime          @default(now())
+
+  deliveries  DeliveryAttempt[]
+}
+
+// 3. Tabel DeliveryAttempt (Log riwayat pengiriman, latensi, & status retry)
+model DeliveryAttempt {
+  id             String        @id @default(uuid())
+  status         String        // "SUCCESS", "FAILED", "PENDING_RETRY"
+  statusCode     Int?          // 200, 404, 500, atau null jika network timeout
+  latencyMs      Int           @default(0) // Durasi pengiriman dalam milidetik (ms)
+  requestHeaders String?       @db.Text   // Termasuk X-Hook-Signature & X-Hook-Timestamp
+  requestBody    String        @db.Text
+  responseBody   String?       @db.Text   // Cuplikan balasan dari server penerima
+  errorMessage   String?
+  attemptNumber  Int           @default(1) // Percobaan ke-1, ke-2, ke-3
+  nextRetryAt    DateTime?     // Jadwal percobaan ulang otomatis (Exponential Backoff)
+  createdAt      DateTime      @default(now())
+
+  endpointId     String
+  endpoint       Endpoint      @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  eventId        String
+  event          WebhookEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
